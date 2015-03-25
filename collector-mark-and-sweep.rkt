@@ -60,3 +60,16 @@
   (if (gc:flat? a)
       (heap-ref (+ 1 a))
       (error 'gc:deref "expects address of prim")))
+
+
+
+;mark and sweep
+; add value after type to heap for each object that contains reference count
+; when it's time to mark and sweep, get root set, 
+;call mark
+;for each root in root set
+;    mark root
+;    if root is procedure
+;        recurse over procedure-roots of root
+;    if root is cons
+;        recurse over pointers

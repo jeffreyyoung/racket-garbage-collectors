@@ -4,11 +4,9 @@
 
 (heap-size)
 
-(get-root-set )
-
 (define (mark-and-sweep)
-  (get-root-set)
-  )
+  (begin (write (get-root-set))
+         (#f)))
 
 (define (init-allocator)
   (set! heap-ptr 0))

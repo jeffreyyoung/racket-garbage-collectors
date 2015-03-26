@@ -1,5 +1,10 @@
 #lang plai/collector
 
+; HEADER DEFINITION
+; 0 - type
+; 1 - marked
+(define header-size 2)
+
 (define heap-ptr 'uninitialized-heap-ptr)
 
 (heap-size)
@@ -11,46 +16,52 @@
 (define (init-allocator)
   (set! heap-ptr 0))
 
-(define (gc:alloc-flat p)
+; Sets a header of the specified type at the address
+(define (set-header a type)
   (begin
-    (when (> (+ heap-ptr 2) (heap-size))
-      (mark-and-sweep))
-    (heap-set! heap-ptr 'prim)
-    (heap-set! (+ 1 heap-ptr) p)
-    (set! heap-ptr (+ 2 heap-ptr))
-    (- heap-ptr 2)))
+    (heap-set! a type)
+    (heap-set! (+ 1 a) #f)))
 
-(define (gc:cons f r)
+(define (gc:alloc-flat p)
   (begin
     (when (> (+ heap-ptr 3) (heap-size))
       (error 'gc:cons "out of memory"))
-    (heap-set! heap-ptr 'cons)
-    (heap-set! (+ 1 heap-ptr) f)
-    (heap-set! (+ 2 heap-ptr) r)
-    (set! heap-ptr (+ 3 heap-ptr))
-    (- heap-ptr 3)))
+    (set-header heap-ptr 'prim)
+    (heap-set! (+ header-size heap-ptr) p)
+    (set! heap-ptr (+ (+ header-size 1) heap-ptr))
+    (- heap-ptr (+ header-size 1))))
+
+(define (gc:cons f r)
+  (begin
+    (when (> (+ heap-ptr 4) (heap-size))
+      (error 'gc:cons "out of memory"))
+    (set-header heap-ptr 'cons)
+    (heap-set! (+ header-size heap-ptr) f)
+    (heap-set! (+ (+ 1 header-size) heap-ptr) r)
+    (set! heap-ptr (+ (+ 2 header-size) heap-ptr))
+    (- heap-ptr (+ 2 header-size))))
 
 (define (gc:cons? a)
   (eq? (heap-ref a) 'cons))
 
 (define (gc:first a)
   (if (gc:cons? a)
-      (heap-ref (+ 1 a))
+      (heap-ref (+ header-size a))
       (error 'gc:first "expects address of cons")))
 
 (define (gc:rest a)
   (if (gc:cons? a)
-      (heap-ref (+ 2 a))
+      (heap-ref (+ (+ header-size 1) a))
       (error 'gc:rest "expects address of cons")))
 
 (define (gc:set-first! a f)
   (if (gc:cons? a)
-      (heap-set! (+ 1 a) f)
+      (heap-set! (+ header-size a) f)
       (error 'gc:set-first! "expects address of cons")))
 
 (define (gc:set-rest! a r)
   (if (gc:cons? a)
-      (heap-set! (+ 2 a) r)
+      (heap-set! (+ (+ header-size 1) a) r)
       (error 'gc:set-rest! "expects address of cons")))
 
 (define (gc:flat? a)
@@ -58,7 +69,7 @@
 
 (define (gc:deref a)
   (if (gc:flat? a)
-      (heap-ref (+ 1 a))
+      (heap-ref (+ header-size a))
       (error 'gc:deref "expects address of prim")))
 
 

@@ -14,10 +14,57 @@
 
 (heap-size)
 
-(define (mark-and-sweep)
+(define (mark-and-sweep!)
   (begin 
-    (write (get-root-set))
-    (#f)))
+    (map 
+     (lambda (root) 
+       (begin
+         (displayln (read-root root))
+         (mark! (read-root root)))) 
+     (get-root-set))
+    (sweep! 3)))
+
+; (mark! a) -> void?
+;   a : integer?
+; Recursively marks the frame at the given address
+(define (mark! a)
+  (case (heap-ref a)
+    [(cons) 
+     (if (false? (heap-ref (+ a 1)))
+         (begin 
+           (heap-set! (+ a 1) #t) ; Mark this frame
+           (mark! (heap-ref (+ a (+ header-size 1))))) ; Mark rest of cons
+         (void))]
+    [(prim) 
+     (if (false? (heap-ref (+ a 1)))
+         (heap-set! (+ a 1) #t); Mark this frame
+         (void))]
+    [(free) (error 'mark "Free memory encounted during mark")]))
+
+; (sweep! a) -> void?
+;   a : integer?
+; Sweeps memory, freeing all unmarked data
+(define (sweep! a)
+  (if (not (< a heap-ptr))
+      (void)
+      (case (heap-ref a)
+        [(free)
+         (sweep! (+ a 3 (heap-ref (+ a 2))))]
+        [(cons)
+         (begin
+           (if (not (marked? a))
+               (free-heap-memory! a 1)
+               (heap-set! (+ a 1) #f))
+           (sweep! (+ a (+ header-size 2))))]
+        [(prim)
+         (begin
+           (if (not (marked? a))
+             (free-heap-memory! a 0)
+             (heap-set! (+ a 1) #f))
+           (sweep! (+ a (+ header-size 1))))])))
+
+(define (marked? a)
+  (heap-ref (+ a 1)))
 
 (define (init-allocator)
   (begin
@@ -33,7 +80,11 @@
 ; Returns the first available address in the 
 ;  free memory list with n contiguous frames
 (define (get-free-frames n)
-  (get-free-address 0 n))
+  (begin
+    (define ret-val (get-free-address 0 n))
+    (displayln "Retrived free location")
+    (displayln ret-val)
+    ret-val))
 
 ; (get-free-frames -> n) -> address?
 ;   a : address? 
@@ -45,13 +96,18 @@
     (cond 
       ; If we reached the head pointer, that's the new address
       [(eq? heap-ptr next-a) 
-       (begin
-         (when (> (+ heap-ptr n) (heap-size))
-           (error 'get-free-address "out of memory"))
-         (define ret-ptr heap-ptr)
-         (set! heap-ptr (+ heap-ptr n)) ; Update heap pointer
-         (heap-set! (+ a 1) heap-ptr) ; Update the previous free space's pointer to the new heap pointer
-         ret-ptr)]
+       (if (> (+ heap-ptr n) (heap-size))
+           (begin
+             (mark-and-sweep!)
+             (displayln "Re-trying after mark-and-sweep recursively. This could be bad.")
+             (displayln heap-ptr)
+             ;(error 'get-free-address "out of memory")))
+             (get-free-address 0 n))
+           (let [(ret-ptr heap-ptr)]
+             (begin
+               (set! heap-ptr (+ heap-ptr n)) ; Update heap pointer
+               (heap-set! (+ a 1) heap-ptr) ; Update the previous free space's pointer to the new heap pointer
+               ret-ptr)))]
       ; Check for wrong header type
       [(not (eq? (heap-ref next-a) 'free)) 
        (error 'get-free-address "Expected free memory address")]

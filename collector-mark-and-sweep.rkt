@@ -5,16 +5,77 @@
 ; 1 - marked
 (define header-size 2)
 
+; FREE FRAME DEFINITION
+; 0 - 'free
+; 1 - next pointer
+; 2 - number of additional free frames (excl.)
+
 (define heap-ptr 'uninitialized-heap-ptr)
 
 (heap-size)
 
 (define (mark-and-sweep)
-  (begin (write (get-root-set))
-         (#f)))
+  (begin 
+    (write (get-root-set))
+    (#f)))
 
 (define (init-allocator)
-  (set! heap-ptr 0))
+  (begin
+    ; Set up free space list root node
+    (heap-set! 0 'free)
+    (heap-set! 1 3)
+    (heap-set! 2 0)
+    ; Init heap pointer
+    (set! heap-ptr 3)))
+
+; (get-free-frames -> n) -> address?
+;   n : number?
+; Returns the first available address in the 
+;  free memory list with n contiguous frames
+(define (get-free-frames n)
+  (get-free-address 0 n))
+
+; (get-free-frames -> n) -> address?
+;   a : address? 
+;   n : number?
+; Recurses the free memory list and returns the first address
+;  with n contiguous frames
+(define (get-free-address a n)
+  (let [(next-a (heap-ref (+ a 1)))]
+    (cond 
+      ; If we reached the head pointer, that's the new address
+      [(eq? heap-ptr next-a) 
+       (begin
+         (when (> (+ heap-ptr n) (heap-size))
+           (error 'get-free-address "out of memory"))
+         (define ret-ptr heap-ptr)
+         (set! heap-ptr (+ heap-ptr n)) ; Update heap pointer
+         (heap-set! (+ a 1) heap-ptr) ; Update the previous free space's pointer to the new heap pointer
+         ret-ptr)]
+      ; Check for wrong header type
+      [(not (eq? (heap-ref next-a) 'free)) 
+       (error 'get-free-address "Expected free memory address")]
+      ; Check if this memory segment is the right size
+      [(eq? (+ 3 (heap-ref (+ next-a 2))) n) 
+       (begin
+         (heap-set! (+ a 1) (heap-ref (+ next-a 1))) ; Update the previous free space's next pointer
+         next-a)]
+      ; Check next in list
+      [else (get-free-address (heap-ref (+ next-a 1)) n)])))
+
+; (free-heap-memory! a n) -> void?
+;   a : integer?
+;   n : integer?
+; Frees the specified address in memory for n frames of the heap
+(define (free-heap-memory! a n)
+  (begin
+    ; Update header definition
+    (heap-set! a 'free)
+    (heap-set! (+ a 1) (heap-ref 1)) ; Point at whatever root node is pointing at
+    (heap-set! (+ a 2) n)
+    ; Insert memory at beginning of free memory list
+    (heap-set! 1 a)
+    (void)))
 
 ; Sets a header of the specified type at the address
 (define (set-header a type)
@@ -24,22 +85,18 @@
 
 (define (gc:alloc-flat p)
   (begin
-    (when (> (+ heap-ptr 3) (heap-size))
-      (error 'gc:cons "out of memory"))
-    (set-header heap-ptr 'prim)
-    (heap-set! (+ header-size heap-ptr) p)
-    (set! heap-ptr (+ (+ header-size 1) heap-ptr))
-    (- heap-ptr (+ header-size 1))))
+    (define a (get-free-frames 3))
+    (set-header a 'prim)
+    (heap-set! (+ a header-size) p)
+    a))
 
 (define (gc:cons f r)
   (begin
-    (when (> (+ heap-ptr 4) (heap-size))
-      (error 'gc:cons "out of memory"))
-    (set-header heap-ptr 'cons)
-    (heap-set! (+ header-size heap-ptr) f)
-    (heap-set! (+ (+ 1 header-size) heap-ptr) r)
-    (set! heap-ptr (+ (+ 2 header-size) heap-ptr))
-    (- heap-ptr (+ 2 header-size))))
+    (define a (get-free-frames 4))
+    (set-header a 'cons)
+    (heap-set! (+ a header-size) f)
+    (heap-set! (+ a (+ 1 header-size)) r)
+    a))
 
 (define (gc:cons? a)
   (eq? (heap-ref a) 'cons))

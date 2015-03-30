@@ -2,7 +2,7 @@
 
 ; HEADER DEFINITION
 ; 0 - type
-; 1 - marked
+; 1 - forward address
 (define header-size 2)
 
 (define heap-ptr 'uninitialized-heap-ptr)
@@ -25,7 +25,21 @@
 (define (println in)
   (begin (displayln in)))
 
+(define (debug-print a b)
+  (begin
+    (print "copying ")
+    (print a)
+    (print "to ")
+    (println b)
+  ))
 
+(define (debug-root-ref a b)
+  (begin
+    (print "root-ref was ")
+    (print a)
+    (print " but now is ")
+    (println b)
+  ))
 ;use set-root to update root location on heap
 
 (define (copy a)
@@ -33,35 +47,50 @@
     [(cons) 
      (if (false? (heap-ref (+ a 1))) ;if has not been copied
          (begin 
-           (when (root? a)
+           (when (root? (heap-ref a))
              (set-root! (heap-ref a) heap-ptr));update root reference
-           (heap-set! (+ a 1) #t) ; Mark frame as copied
-           (gc:cons (heap-ref (+ a header-size)) (heap-ref (+ a header-size 1)));something is wrong here
+           (heap-set! (+ a 1) heap-ptr) ; Mark forward address
+           (gc:cons (heap-ref (+ a header-size)) (+ heap-ptr 4));(heap-ref (+ a header-size 1)));something is wrong here
+           (debug-print a heap-ptr)
            (copy (heap-ref (+ a (+ header-size 1))))) ; Mark rest of cons
          (void))]
     [(prim) 
-     (if (false? (heap-ref (+ a 1)))
+     (if (false? (heap-ref (+ a 1))) ;if object has not been copied
          (begin
-           (when (root? a)
-             (set-root! (heap-ref a) heap-ptr));update root reference
-           (heap-set! (+ a 1) #t); Mark this frame
-           (println "here")
-           (gc:alloc-flat (heap-ref (+ a header-size))))
-           ;(gc:alloc-flat "yayayaya"))
+           (when (root? (heap-ref a))
+             (begin
+               (set-root! (heap-ref a) heap-ptr));update root reference
+               (debug-root-ref a heap-ptr)
+             )
+           (heap-set! (+ a 1) heap-ptr); mark forward address
+           (debug-print a heap-ptr)
+           (gc:alloc-flat (heap-ref (+ a header-size)))
+           (when (procedure? (heap-ref (+ a header-size)))
+             (begin
+               (println "FOUND A PROCEDURE!!!")
+               (stop-and-copy-roots (procedure-roots (heap-ref (+ a header-size)))))))
          (void))]
-    [(free) (error 'mark "Free memory encounted during mark")]))
+    ))
+
+(define (stop-and-copy-roots rts)
+  (begin 
+    (print rts)
+    (map ;recursively copy starting from root-set
+     (lambda (x) 
+       (begin
+         (print "reading root ")
+         (print x)
+         (println (read-root x))
+         (copy (read-root x)))) 
+     rts)))
+  
 
 (define (stop-and-copy)
   (begin 
     (print (get-root-set))
     (update-heap-ptr) ;set the heap pointer to start of new heap section
     (set! isUsingFirstHeapFrame (not isUsingFirstHeapFrame));update bool
-    (map ;recursively copy starting from root-set
-     (lambda (x) 
-       (begin
-         (println (read-root x))
-         (copy (read-root x)))) 
-     (get-root-set))))
+    (stop-and-copy-roots (get-root-set))))
 
 (define (init-allocator)
   (set! heap-ptr 0))

@@ -12,8 +12,8 @@
 (define (update-heap-ptr)
   (begin
     (if isUsingFirstHeapFrame
-        (set! heap-ptr (/ (heap-size) 2))
-        (set! heap-ptr 0)))
+        (set! heap-ptr 0)
+        (set! heap-ptr (/ (heap-size) 2))))
   )
 
 (define (get-end-of-heap)
@@ -49,27 +49,30 @@
          (begin 
            (when (root? (heap-ref a))
              (set-root! (heap-ref a) heap-ptr));update root reference
-           (heap-set! (+ a 1) heap-ptr) ; Mark forward address
+           (heap-set! (+ a 1) heap-ptr) ; set forward address
            (gc:cons (heap-ref (+ a header-size)) (+ heap-ptr 4));(heap-ref (+ a header-size 1)));something is wrong here
            (debug-print a heap-ptr)
            (copy (heap-ref (+ a (+ header-size 1))))) ; Mark rest of cons
-         (void))]
+         (begin
+           (print (heap-ref a))
+           (println " has already been copied")))]
     [(prim) 
      (if (false? (heap-ref (+ a 1))) ;if object has not been copied
          (begin
            (when (root? (heap-ref a))
              (begin
-               (set-root! (heap-ref a) heap-ptr));update root reference
-               (debug-root-ref a heap-ptr)
-             )
+               (set-root! (heap-ref a) heap-ptr));set root reference
+               (debug-root-ref a heap-ptr))
            (heap-set! (+ a 1) heap-ptr); mark forward address
-           (debug-print a heap-ptr)
-           (gc:alloc-flat (heap-ref (+ a header-size)))
+           (debug-print a heap-ptr);print debug stuff
+           (gc:alloc-flat (heap-ref (+ a header-size)));allocate
            (when (procedure? (heap-ref (+ a header-size)))
              (begin
                (println "FOUND A PROCEDURE!!!")
                (stop-and-copy-roots (procedure-roots (heap-ref (+ a header-size)))))))
-         (void))]
+         (begin
+           (print (heap-ref a))
+           (println " has already been copied")))]
     ))
 
 (define (stop-and-copy-roots rts)
@@ -90,7 +93,11 @@
     (print (get-root-set))
     (update-heap-ptr) ;set the heap pointer to start of new heap section
     (set! isUsingFirstHeapFrame (not isUsingFirstHeapFrame));update bool
-    (stop-and-copy-roots (get-root-set))))
+    (stop-and-copy-roots (get-root-set))));recursively copy all roots from root set
+
+(define (reset-section)
+  #f
+  )
 
 (define (init-allocator)
   (set! heap-ptr 0))

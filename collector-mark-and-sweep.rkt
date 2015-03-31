@@ -18,9 +18,7 @@
   (begin 
     (map 
      (lambda (root) 
-       (begin
-         (displayln (read-root root))
-         (mark! (read-root root)))) 
+       (mark! (read-root root))) 
      roots)
     (sweep! 3)))
 
@@ -28,8 +26,6 @@
 ;   a : integer?
 ; Recursively marks the frame at the given address
 (define (mark! a)
-  (displayln "Marking address")
-  (displayln a)
   (case (heap-ref a)
     [(cons) 
      (if (false? (heap-ref (+ a 1)))
@@ -46,9 +42,7 @@
            (when (procedure? (heap-ref (+ a 2)))
              (map
               (lambda (root) 
-                (begin 
-                  (displayln "Marking procedure root in mark!")
-                  (mark! (read-root root))))
+                (mark! (read-root root)))
               (procedure-roots (heap-ref (+ a 2)))))))]
     [(free) (error 'mark "Free memory location encounted during mark")]))
 
@@ -96,7 +90,6 @@
 (define (get-free-frames n roots)
   (with-handlers([(lambda (v) (eq? v "Out of memory"))
                   (lambda (v) (begin
-                                (displayln "Caught out of memory exception")
                                 (mark-and-sweep! roots)
                                 (get-free-address 0 n)))])
     (get-free-address 0 n)))
@@ -107,35 +100,27 @@
 ; Recurses the free memory list and returns the first address
 ;  with n contiguous frames
 (define (get-free-address a n)
-  (begin
-    (displayln "get-free-address")
-    (displayln a)
-    (displayln n)
-    (displayln (heap-ref (+ a 1)))
-    (displayln heap-ptr)
-    (let [(next-a (heap-ref (+ a 1)))]
-      (cond 
-        ; If we reached the heap pointer, that's the new address
-        [(eq? heap-ptr next-a) 
-         (if (>= (+ heap-ptr n) (heap-size))
-             (raise "Out of memory")
-             (let [(ret-ptr heap-ptr)]
-               (begin
-                 (displayln "Returning head pointer")
-                 (displayln ret-ptr)
-                 (set! heap-ptr (+ heap-ptr n)) ; Update heap pointer
-                 (heap-set! (+ a 1) heap-ptr) ; Update the previous free space's pointer to the new heap pointer
-                 ret-ptr)))]
-        ; Check for wrong header type
-        [(not (eq? (heap-ref next-a) 'free)) 
-         (error 'get-free-address "Expected free memory address")]
-        ; Check if this memory segment is the right size
-        [(eq? (+ 3 (heap-ref (+ next-a 2))) n) 
-         (begin
-           (heap-set! (+ a 1) (heap-ref (+ next-a 1))) ; Update the previous free space's next pointer
-           next-a)]
-        ; Check next in list
-        [else (get-free-address next-a n)]))))
+  (let [(next-a (heap-ref (+ a 1)))]
+    (cond 
+      ; If we reached the heap pointer, that's the new address
+      [(eq? heap-ptr next-a) 
+       (if (>= (+ heap-ptr n) (heap-size))
+           (raise "Out of memory")
+           (let [(ret-ptr heap-ptr)]
+             (begin
+               (set! heap-ptr (+ heap-ptr n)) ; Update heap pointer
+               (heap-set! (+ a 1) heap-ptr) ; Update the previous free space's pointer to the new heap pointer
+               ret-ptr)))]
+      ; Check for wrong header type
+      [(not (eq? (heap-ref next-a) 'free)) 
+       (error 'get-free-address "Expected free memory address")]
+      ; Check if this memory segment is the right size
+      [(eq? (+ 3 (heap-ref (+ next-a 2))) n) 
+       (begin
+         (heap-set! (+ a 1) (heap-ref (+ next-a 1))) ; Update the previous free space's next pointer
+         next-a)]
+      ; Check next in list
+      [else (get-free-address next-a n)])))
 
 ; (free-heap-memory! a n) -> void?
 ;   a : integer?
@@ -159,8 +144,6 @@
 
 (define (gc:alloc-flat p)
   (begin
-    (displayln "Allocating!")
-    (displayln p)
     (define roots (if (procedure? p)
                       (append (get-root-set) (procedure-roots p))
                       (get-root-set)))
@@ -205,10 +188,7 @@
 
 (define (gc:deref a)
   (if (gc:flat? a)
-      (begin
-        (displayln "Accessing flat")
-        (displayln a)
-        (heap-ref (+ header-size a)))
+      (heap-ref (+ header-size a))
       (error 'gc:deref "expects address of prim")))
 
 

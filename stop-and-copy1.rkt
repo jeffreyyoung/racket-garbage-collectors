@@ -7,18 +7,23 @@
 
 (define heap-ptr 'uninitialized-heap-ptr)
 
-(define isUsingFirstHeapSpace #t)
+(define isUsingFirstHeapSpaceAsToSpace #t)
 
-(define (update-heap-ptr)
+(define (set-heap-ptr-to-to-space)
   (begin
-    (if isUsingFirstHeapSpace
+    (print "isUsingFirstHeapSpaceAsToSpace: ")
+    (println isUsingFirstHeapSpaceAsToSpace)
+    (if isUsingFirstHeapSpaceAsToSpace
         (set! heap-ptr (/ (heap-size) 2))
         (set! heap-ptr 0))
-    (set! isUsingFirstHeapSpace (not isUsingFirstHeapSpace)));update bool)
-  )
+    (set! isUsingFirstHeapSpaceAsToSpace (not isUsingFirstHeapSpaceAsToSpace))
+    (print "HEAP PTR ")
+    (println heap-ptr);update bool)
+    
+  ))
 
 (define (get-end-of-heap)
-  (if isUsingFirstHeapSpace
+  (if isUsingFirstHeapSpaceAsToSpace
       (/ (heap-size) 2)
       (heap-size))
   )
@@ -46,12 +51,12 @@
 (define (copy a)
   (case (heap-ref a)
     [(cons) 
-     (if (false? (heap-ref (+ a 1))) ;if has not been copied
+     (if (false? (heap-ref (+ a 1))) ;if object has not been moved to the to space
          (begin 
            (when (root? (heap-ref a))
-             (set-root! a heap-ptr));update root reference
-           (heap-set! (+ a 1) heap-ptr) ; set forward address
-           (gc:cons (heap-ref (+ a header-size)) (+ heap-ptr 4));(heap-ref (+ a header-size 1)));something is wrong here
+             (set-root! a heap-ptr));update root reference to refer to the new version in to-space
+           (heap-set! (+ a 1) 99999) ; set forward address
+           (gc:cons (heap-ref (+ a header-size)) (heap-ref (+ heap-ptr 3)));(heap-ref (+ a header-size 1)));something is wrong here
            (debug-print a heap-ptr)
            (copy (heap-ref (+ a (+ header-size 1))))) ; Mark rest of cons
          (begin
@@ -78,7 +83,7 @@
 
 (define (stop-and-copy-roots rts)
   (begin 
-    (print rts)
+    ;(print rts)
     (map ;recursively copy starting from root-set
      (lambda (x) 
        (begin
@@ -89,11 +94,16 @@
      rts)))
   
 
+(define (scan)
+  (println "SCANNING")
+  )
+
 (define (stop-and-copy)
   (begin 
     (print (get-root-set))
-    (update-heap-ptr) ;set the heap pointer to start of new heap section
-    (stop-and-copy-roots (get-root-set))));recursively copy all roots from root set
+    (set-heap-ptr-to-to-space) ;set the heap pointer to start of new heap section
+    (stop-and-copy-roots (get-root-set))
+    (scan)));recursively copy all roots from root set
 
 (define (reset-section)
   #f

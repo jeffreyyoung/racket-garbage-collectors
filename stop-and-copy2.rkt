@@ -24,7 +24,7 @@
   ))
 
 (define (reset)
-  (if (not isUsingFirstHeapSpaceAsToSpace)
+  (if isUsingFirstHeapSpaceAsToSpace
       (reset-from-space 0 (/ (heap-size) 2))
       (reset-from-space (/ (heap-size) 2) (heap-size))))
 
@@ -68,7 +68,7 @@
          (begin 
            (print-debug a heap-ptr)
            (when (root? (heap-ref a))
-             (set-root! (heap-ref a) heap-ptr));update root reference to refer to the new version in to-space
+             (set-root! a heap-ptr));update root reference to refer to the new version in to-space
            (heap-set! (+ a 1) heap-ptr) ; set forward address
            (gc:cons (copy (gc:first a)) (copy (gc:rest a))))
          (begin
@@ -78,13 +78,13 @@
      (if (false? (gc:forward a)) ;if object has not been copied
          (begin
            (print-debug a heap-ptr)
-           (when (root? (heap-ref a))
-             (begin
-               (set-root! (heap-ref a) heap-ptr));set root reference
-               )
            (heap-set! (+ a 1) heap-ptr); set forward address
            (when (procedure? (heap-ref (+ a header-size)))
               (begin (stop-and-copy-roots (procedure-roots (gc:deref a))) (print "procuedre roots  ")(print a)(print (procedure-roots (gc:deref a)))))
+           (when (root? (heap-ref a))
+             (begin
+               (set-root! a heap-ptr));set root reference
+               )
            (gc:alloc-flat (heap-ref (+ a header-size))))
          (begin
            (print-already a (gc:forward a))
@@ -99,6 +99,7 @@
        (begin
          ;(print x)
          ;(println (read-root x))
+         
          (copy (read-root x)))) 
      rts)))
   
@@ -107,7 +108,7 @@
     (set-heap-ptr-to-to-space) ;set the heap pointer to start of new heap section
     (set! isUsingFirstHeapSpaceAsToSpace (not isUsingFirstHeapSpaceAsToSpace))
     (stop-and-copy-roots (get-root-set))
-    (reset)
+    ;(reset)
     (println "done copying")))
     ;(scan)));recursively copy all roots from root set
 
@@ -169,7 +170,7 @@
   (eq? (heap-ref a) 'prim))
 
 (define (gc:deref a)
-  (begin (printf "deref a ~a~n" a)
+  (begin ;(printf "deref a ~a~n" a)
   (if (gc:flat? a)
       (heap-ref (+ header-size a))
       (error 'gc:deref "expects address of prim"))))

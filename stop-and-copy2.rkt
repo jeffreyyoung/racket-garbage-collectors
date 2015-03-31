@@ -9,6 +9,8 @@
 
 (define isUsingFirstHeapSpaceAsToSpace #t)
 
+(define debug #t)
+
 (define (set-heap-ptr-to-to-space)
   (begin
     (print "isUsingFirstHeapSpaceAsToSpace: ")
@@ -21,6 +23,19 @@
     
   ))
 
+(define (reset)
+  (if (not isUsingFirstHeapSpaceAsToSpace)
+      (reset-from-space 0 (/ (heap-size) 2))
+      (reset-from-space (/ (heap-size) 2) (heap-size))))
+
+(define (reset-from-space start finish)
+  (if (start < finish)
+      (begin
+        (heap-set! #f start)
+        (reset-from-space (+ start 1) finish))
+      (println "finished resetting")
+  ))
+
 (define (get-end-of-heap)
   (if isUsingFirstHeapSpaceAsToSpace
       (/ (heap-size) 2)
@@ -30,7 +45,7 @@
 (define (println in)
   (begin (displayln in)))
 
-(define (debug-print a b)
+(define (print-debug a b)
   (begin
     (print "copying ")
     (print a)
@@ -38,56 +53,42 @@
     (println b)
   ))
 
-(define (debug-root-ref a b)
+(define (print-already a b)
   (begin
-    (print "root-ref was ")
+    (print "already copied ")
     (print a)
-    (print " but now is ")
+    (print " to ")
     (println b)
   ))
-
-;use set-root to update root location on heap
-(define (copy-child a)
-  (begin
-    (println "HEREHERHERHEHREHRE")
-    (println a)
-    (case (heap-ref a)
-      [(cons) (gc:cons (copy-child (gc:first a)) (copy-child (gc:rest a)))]
-      [(prim) (gc:alloc-flat (gc:deref a))])))
 
 (define (copy a)
   (case (heap-ref a)
     [(cons) 
-     (if (false? (heap-ref (+ a 1))) ;if object has not been moved to the to space
+     (if (false? (gc:forward a)) ;if object has not yet been moved to the to-space
          (begin 
+           (print-debug a heap-ptr)
            (when (root? (heap-ref a))
-             (set-root! a heap-ptr));update root reference to refer to the new version in to-space
+             (set-root! (heap-ref a) heap-ptr));update root reference to refer to the new version in to-space
            (heap-set! (+ a 1) heap-ptr) ; set forward address
-           (gc:cons (copy-child (gc:first a)) (copy-child (gc:rest a)));(heap-ref (+ a header-size 1)));something is wrong here
-           (debug-print a heap-ptr))
+           (gc:cons (copy (gc:first a)) (copy (gc:rest a))))
          (begin
-           (print (heap-ref a))
-           (println " has already been copied")
-           (when (root? (heap-ref a)) (set-root! a (+ a 1)))))]
+           (print-already a (gc:forward a))
+           (gc:forward a)))] ;if object has already been copied, return forward address
     [(prim) 
-     (if (false? (heap-ref (+ a 1))) ;if object has not been copied
+     (if (false? (gc:forward a)) ;if object has not been copied
          (begin
+           (print-debug a heap-ptr)
            (when (root? (heap-ref a))
              (begin
-               (set-root! a heap-ptr));set root reference
-               (debug-root-ref a heap-ptr))
-           (heap-set! (+ a 1) heap-ptr); mark forward address
-           (debug-print a heap-ptr);print debug stuff
-           (gc:alloc-flat (heap-ref (+ a header-size)));allocate
+               (set-root! (heap-ref a) heap-ptr));set root reference
+               )
+           (heap-set! (+ a 1) heap-ptr); set forward address
            (when (procedure? (heap-ref (+ a header-size)))
-             (begin
-               (println "FOUND A PROCEDURE!!!")
-               (stop-and-copy-roots (procedure-roots (gc:deref a))))))
+              (begin (stop-and-copy-roots (procedure-roots (gc:deref a))) (print "procuedre roots  ")(print a)(print (procedure-roots (gc:deref a)))))
+           (gc:alloc-flat (heap-ref (+ a header-size))))
          (begin
-           (print (heap-ref a))
-           (println " has already been copied")
-           (when (root? (heap-ref a)) (set-root! a (+ a 1)))))]
-    [(forward) (print "FORWARD")]
+           (print-already a (gc:forward a))
+           (gc:forward a)))] ;if object has already been copied, return forward address
     ))
 
 (define (stop-and-copy-roots rts)
@@ -96,34 +97,20 @@
     (map ;recursively copy starting from root-set
      (lambda (x) 
        (begin
-         (print "reading root ")
-         (print x)
-         (println (read-root x))
+         ;(print x)
+         ;(println (read-root x))
          (copy (read-root x)))) 
      rts)))
   
-
-(define (begin-scan)
-  (if isUsingFirstHeapSpaceAsToSpace
-      (scan 0)
-      (scan (/ (heap-size) 2))))
-
-(define (scan a)
-  (begin
-    (print "scanning")
-    ))
-
 (define (stop-and-copy)
   (begin 
-    ;(print (get-root-set))
     (set-heap-ptr-to-to-space) ;set the heap pointer to start of new heap section
     (set! isUsingFirstHeapSpaceAsToSpace (not isUsingFirstHeapSpaceAsToSpace))
-    (stop-and-copy-roots (get-root-set))))
+    (stop-and-copy-roots (get-root-set))
+    (reset)
+    (println "done copying")))
     ;(scan)));recursively copy all roots from root set
 
-(define (reset-section)
-  #f
-  )
 
 (define (init-allocator)
   (set! heap-ptr 0))
@@ -132,7 +119,7 @@
 (define (set-header a type)
   (begin
     (heap-set! a type)
-    (heap-set! (+ 1 a) #f)))
+    (heap-set! (+ 1 a) #f)));set forward to false
 
 (define (gc:alloc-flat p)
   (begin
@@ -142,6 +129,7 @@
     (heap-set! (+ header-size heap-ptr) p)
     (set! heap-ptr (+ (+ header-size 1) heap-ptr))
     (- heap-ptr (+ header-size 1))))
+
 
 (define (gc:cons f r)
   (begin
@@ -162,9 +150,10 @@
       (error 'gc:first "expects address of cons")))
 
 (define (gc:rest a)
+  (begin (println a)
   (if (gc:cons? a)
       (heap-ref (+ (+ header-size 1) a))
-      (error 'gc:rest "expects address of cons")))
+      (error 'gc:rest "expects address of cons"))))
 
 (define (gc:set-first! a f)
   (if (gc:cons? a)
@@ -180,6 +169,11 @@
   (eq? (heap-ref a) 'prim))
 
 (define (gc:deref a)
+  (begin (printf "deref a ~a~n" a)
   (if (gc:flat? a)
       (heap-ref (+ header-size a))
-      (error 'gc:deref "expects address of prim")))
+      (error 'gc:deref "expects address of prim"))))
+
+(define (gc:forward a)
+  (heap-ref (+ a 1))
+  )

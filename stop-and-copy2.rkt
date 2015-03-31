@@ -45,11 +45,16 @@
     (print " but now is ")
     (println b)
   ))
+
 ;use set-root to update root location on heap
 (define (copy-child a)
-  (case (heap-ref a)
-    [(cons) (gc:cons (copy-child (+ a header-size)) (copy-child (+ a header-size 1)))]
-    [(prim) (gc:alloc-flat (heap-ref (+ a header-size)))]))
+  (begin
+    (println "HEREHERHERHEHREHRE")
+    (println a)
+    (case (heap-ref a)
+      [(cons) (gc:cons (copy-child (gc:first a)) (copy-child (gc:rest a)))]
+      [(prim) (gc:alloc-flat (gc:deref a))])))
+
 (define (copy a)
   (case (heap-ref a)
     [(cons) 
@@ -58,13 +63,12 @@
            (when (root? (heap-ref a))
              (set-root! a heap-ptr));update root reference to refer to the new version in to-space
            (heap-set! (+ a 1) heap-ptr) ; set forward address
-           (gc:cons (copy-child (heap-ref (+ a header-size))) (copy-child (heap-ref (+ a header-size 1))));(heap-ref (+ a header-size 1)));something is wrong here
-           (debug-print a heap-ptr)
-           (copy (heap-ref (+ a header-size))) ;copy first of cons
-           (copy (heap-ref (+ a header-size 1)))) ; copy rest of cons
+           (gc:cons (copy-child (gc:first a)) (copy-child (gc:rest a)));(heap-ref (+ a header-size 1)));something is wrong here
+           (debug-print a heap-ptr))
          (begin
            (print (heap-ref a))
-           (println " has already been copied")))]
+           (println " has already been copied")
+           (when (root? (heap-ref a)) (set-root! a (+ a 1)))))]
     [(prim) 
      (if (false? (heap-ref (+ a 1))) ;if object has not been copied
          (begin
@@ -78,10 +82,11 @@
            (when (procedure? (heap-ref (+ a header-size)))
              (begin
                (println "FOUND A PROCEDURE!!!")
-               (stop-and-copy-roots (procedure-roots (heap-ref (+ a header-size)))))))
+               (stop-and-copy-roots (procedure-roots (gc:deref a))))))
          (begin
            (print (heap-ref a))
-           (println " has already been copied")))]
+           (println " has already been copied")
+           (when (root? (heap-ref a)) (set-root! a (+ a 1)))))]
     [(forward) (print "FORWARD")]
     ))
 
@@ -105,7 +110,7 @@
 
 (define (scan a)
   (begin
-    (println "SCANNING");
+    (print "scanning")
     ))
 
 (define (stop-and-copy)
@@ -113,8 +118,8 @@
     ;(print (get-root-set))
     (set-heap-ptr-to-to-space) ;set the heap pointer to start of new heap section
     (set! isUsingFirstHeapSpaceAsToSpace (not isUsingFirstHeapSpaceAsToSpace))
-    (stop-and-copy-roots (get-root-set))
-    (scan)));recursively copy all roots from root set
+    (stop-and-copy-roots (get-root-set))))
+    ;(scan)));recursively copy all roots from root set
 
 (define (reset-section)
   #f

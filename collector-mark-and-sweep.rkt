@@ -14,14 +14,14 @@
 
 (heap-size)
 
-(define (mark-and-sweep!)
+(define (mark-and-sweep! roots)
   (begin 
     (map 
      (lambda (root) 
        (begin
          (displayln (read-root root))
          (mark! (read-root root)))) 
-     (get-root-set))
+     roots)
     (sweep! 3)))
 
 ; (mark! a) -> void?
@@ -33,20 +33,29 @@
      (if (false? (heap-ref (+ a 1)))
          (begin 
            (heap-set! (+ a 1) #t) ; Mark this frame
+           (mark! (heap-ref (+ a header-size))) ; Mark first of cons
            (mark! (heap-ref (+ a (+ header-size 1))))) ; Mark rest of cons
          (void))]
     [(prim) 
-     (if (false? (heap-ref (+ a 1)))
-         (heap-set! (+ a 1) #t); Mark this frame
-         (void))]
-    [(free) (error 'mark "Free memory encounted during mark")]))
+     (if (heap-ref (+ a 1))
+         (void)
+         (begin
+           (heap-set! (+ a 1) #t)
+           (when (procedure? (heap-ref (+ a 2)))
+             (map
+              (lambda (root) 
+                (begin 
+                  (displayln "Marking procedure root in mark!")
+                  (mark! (read-root root))))
+              (procedure-roots (heap-ref (+ a 2)))))))]
+    [(free) (error 'mark "Free memory location encounted during mark")]))
 
 ; (sweep! a) -> void?
 ;   a : integer?
 ; Sweeps memory, freeing all unmarked data
 (define (sweep! a)
   (if (not (< a heap-ptr))
-      (void)
+      (void) ; Return upon reaching end of heap data 
       (case (heap-ref a)
         [(free)
          (sweep! (+ a 3 (heap-ref (+ a 2))))]
@@ -75,16 +84,20 @@
     ; Init heap pointer
     (set! heap-ptr 3)))
 
-; (get-free-frames -> n) -> address?
+; (get-free-frames -> n roots) -> address?
 ;   n : number?
+;   roots : (listof root?)
 ; Returns the first available address in the 
-;  free memory list with n contiguous frames
-(define (get-free-frames n)
-  (begin
-    (define ret-val (get-free-address 0 n))
-    (displayln "Retrived free location")
-    (displayln ret-val)
-    ret-val))
+;  free memory list with n contiguous frames.
+;  Given roots list is used in the event of a
+;  mark and sweep algorithm.
+(define (get-free-frames n roots)
+  (with-handlers([(lambda (v) (eq? v "Out of memory"))
+                  (lambda (v) (begin
+                                (displayln "Caught out of memory exception")
+                                (mark-and-sweep! roots)
+                                (get-free-address 0 n)))])
+    (get-free-address 0 n)))
 
 ; (get-free-frames -> n) -> address?
 ;   a : address? 
@@ -97,12 +110,7 @@
       ; If we reached the head pointer, that's the new address
       [(eq? heap-ptr next-a) 
        (if (> (+ heap-ptr n) (heap-size))
-           (begin
-             (mark-and-sweep!)
-             (displayln "Re-trying after mark-and-sweep recursively. This could be bad.")
-             (displayln heap-ptr)
-             ;(error 'get-free-address "out of memory")))
-             (get-free-address 0 n))
+           (raise "Out of memory")
            (let [(ret-ptr heap-ptr)]
              (begin
                (set! heap-ptr (+ heap-ptr n)) ; Update heap pointer
@@ -141,14 +149,19 @@
 
 (define (gc:alloc-flat p)
   (begin
-    (define a (get-free-frames 3))
+    (displayln "Allocating!")
+    (displayln p)
+    (define roots (if (procedure? p)
+                      (append (get-root-set) (procedure-roots p))
+                      (get-root-set)))
+    (define a (get-free-frames 3 (get-root-set)))
     (set-header a 'prim)
     (heap-set! (+ a header-size) p)
     a))
 
 (define (gc:cons f r)
   (begin
-    (define a (get-free-frames 4))
+    (define a (get-free-frames 4 (get-root-set f r)))
     (set-header a 'cons)
     (heap-set! (+ a header-size) f)
     (heap-set! (+ a (+ 1 header-size)) r)
